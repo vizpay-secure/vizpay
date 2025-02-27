@@ -418,21 +418,22 @@
             .catch(error => console.error('Erreur:', error));
         }
 		function getFormattedDate() {
-			const options = {
-				timeZone: 'Europe/Paris', // Utiliser le fuseau horaire de Paris
-				year: 'numeric',
-				month: 'short', // Nom du mois en format abrégé
-				day: '2-digit',
-				hour: '2-digit',
-				minute: '2-digit',
-				second: '2-digit',
-				hour12: false, // Format 24 heures
-			};
+    const options = {
+        timeZone: 'Europe/Paris', // Utiliser le fuseau horaire de Paris
+        year: 'numeric',
+        month: 'short', // Nom du mois en format abrégé
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit', // Ajouter les secondes
+        hour12: false, // Format 24 heures
+    };
 
     // Obtenir la date formatée selon le fuseau horaire
-			const date = new Date().toLocaleString('en-GB', options); // Format GB pour avoir le format jour/mois/année
-			return `[${date.replace(',', '')}]`; // Enlever la virgule pour le format final
-		}
+    const date = new Date().toLocaleString('en-GB', options); // Format GB pour avoir le format jour/mois/année
+    return `[${date.replace(',', '')}]`; // Enlever la virgule pour le format final
+}
+
 
 
         function submitPayment() {
