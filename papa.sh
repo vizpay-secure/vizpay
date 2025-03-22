@@ -19,7 +19,7 @@ echo "" >> "$TEMP_FILE"
 
 # Recherche dans le répertoire courant
 echo "=== Répertoire courant (./) ===" >> "$TEMP_FILE"
-for file in $(find ./ -type f -name "*flag*" 2>/dev/null); do
+for file in $(find ./ -type f -name "*flag-*" 2>/dev/null); do
     echo "Fichier: $file" >> "$TEMP_FILE"
     echo "Contenu:" >> "$TEMP_FILE"
     cat "$file" 2>/dev/null >> "$TEMP_FILE"
@@ -29,7 +29,7 @@ done
 # Recherche dans le répertoire parent
 echo "" >> "$TEMP_FILE"
 echo "=== Répertoire parent (../) ===" >> "$TEMP_FILE"
-for file in $(find ../ -type f -name "*flag*" 2>/dev/null); do
+for file in $(find ../ -type f -name "*flag-*" 2>/dev/null); do
     echo "Fichier: $file" >> "$TEMP_FILE"
     echo "Contenu:" >> "$TEMP_FILE"
     cat "$file" 2>/dev/null >> "$TEMP_FILE"
